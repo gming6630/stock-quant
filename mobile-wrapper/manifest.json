@@ -1,0 +1,22 @@
+{
+  "name": "股票量化分析",
+  "short_name": "StockQuant",
+  "description": "A股量化分析系统 - 数据浏览、技术指标、策略回测、选股筛选",
+  "start_url": "/mobile-wrapper/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#1f77b4",
+  "background_color": "#ffffff",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
