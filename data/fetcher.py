@@ -99,28 +99,37 @@ def get_stock_list():
 
 
 def search_stocks(keyword):
+    """搜索股票：支持中文名称、拼音首字母、股票代码"""
     df = pd.DataFrame(_CORE_STOCKS, columns=["code", "name"])
-    key = keyword.strip().lower()
+    key = keyword.strip()
 
-    # 纯数字 = 代码搜索
-    if key.isdigit() and len(key) >= 4:
+    if not key:
+        return df.head(20)
+
+    # 纯数字 → 代码搜索
+    if key.isdigit():
         code_match = df[df["code"].str.startswith(key)]
         if len(code_match) > 0:
             return code_match
-        # 不在列表中但格式像股票代码 → 构造一条
         if len(key) == 6:
             extra = pd.DataFrame([(key.zfill(6), key.zfill(6))], columns=["code", "name"])
             return extra
         return df[df["code"].str.contains(key)]
 
-    # 名称搜索
+    # 中文/英文名称搜索：先精确子串，再逐字模糊
     mask = df["name"].str.contains(key, case=False, na=False)
     result = df[mask]
+
     if result.empty:
-        # 模糊搜索：每个字都包含
+        # 逐字匹配：每个字符都必须出现在名称中
+        narrowed = df
         for char in key:
-            df = df[df["name"].str.contains(char, case=False, na=False)]
-        result = df
+            narrowed = narrowed[narrowed["name"].str.contains(char, case=False, na=False)]
+            if narrowed.empty:
+                break
+        if not narrowed.empty:
+            result = narrowed
+
     return result.head(50)
 
 
