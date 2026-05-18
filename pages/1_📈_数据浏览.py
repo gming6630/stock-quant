@@ -9,9 +9,9 @@ st.set_page_config(page_title="数据浏览", page_icon="📈", layout="wide")
 
 st.title("📈 数据浏览")
 
-# 初始化
-if "picked_code" not in st.session_state:
-    st.session_state.picked_code = ""
+# 从 query params 获取热门按钮点击
+qp = st.query_params
+default_code = qp.get("code", "")
 
 # 搜索栏
 col1, col2, col3 = st.columns([3, 1, 1])
@@ -19,36 +19,42 @@ with col1:
     keyword = st.text_input(
         "🔍 输入股票代码或名称",
         placeholder="例如：贵州茅台 或 600519",
-        value=st.session_state.picked_code,
-        key="search_input",
+        value=default_code if default_code else "",
+        key="search_keyword",
     )
 with col2:
-    period = st.selectbox("周期", ["daily", "weekly", "monthly"],
-                          format_func=lambda x: {"daily": "日线", "weekly": "周线", "monthly": "月线"}[x])
+    period = st.selectbox(
+        "周期", ["daily", "weekly", "monthly"],
+        format_func=lambda x: {"daily": "日线", "weekly": "周线", "monthly": "月线"}[x],
+    )
 with col3:
-    adjust = st.selectbox("复权", ["qfq", "hfq", ""],
-                          format_func=lambda x: {"qfq": "前复权", "hfq": "后复权", "": "不复权"}[x])
+    adjust = st.selectbox(
+        "复权", ["qfq", "hfq", ""],
+        format_func=lambda x: {"qfq": "前复权", "hfq": "后复权", "": "不复权"}[x],
+    )
 
 if not keyword:
-    st.info("👆 请输入股票代码或名称开始搜索")
+    st.info("👆 输入股票代码或名称开始搜索")
 
-    with st.expander("🔥 热门股票速查", expanded=True):
-        hot_stocks = [
-            ("600519", "贵州茅台"), ("000858", "五粮液"), ("300750", "宁德时代"),
-            ("601318", "中国平安"), ("000333", "美的集团"), ("600036", "招商银行"),
-            ("002594", "比亚迪"), ("300059", "东方财富"), ("601899", "紫金矿业"),
-            ("600276", "恒瑞医药"),
-        ]
-        cols = st.columns(5)
-        for i, (code, name) in enumerate(hot_stocks):
-            with cols[i % 5]:
-                if st.button(f"{name}\n{code}", key=f"hot_{code}", use_container_width=True):
-                    st.session_state.picked_code = code
-                    st.rerun()
+    # 热门股票
+    cols = st.columns(5)
+    hot_stocks = [
+        ("600519", "贵州茅台"), ("000858", "五粮液"), ("300750", "宁德时代"),
+        ("601318", "中国平安"), ("000333", "美的集团"), ("600036", "招商银行"),
+        ("002594", "比亚迪"), ("300059", "东方财富"), ("601899", "紫金矿业"),
+        ("600276", "恒瑞医药"),
+    ]
+    for i, (code, name) in enumerate(hot_stocks):
+        with cols[i % 5]:
+            if st.button(name, key=f"hot_{code}", use_container_width=True):
+                st.query_params["code"] = code
+                st.rerun()
+
 else:
     results = search_stocks(keyword)
+
     if results.empty:
-        st.error(f"未找到匹配 '{keyword}' 的股票")
+        st.warning(f"未找到匹配 '{keyword}' 的股票")
     else:
         st.success(f"找到 {len(results)} 只匹配股票")
 
@@ -61,18 +67,19 @@ else:
 
         name = results[results["code"] == symbol]["name"].values[0]
 
-        with st.spinner(f"正在加载 {symbol} 数据..."):
+        with st.spinner(f"正在加载 {name}({symbol}) 数据..."):
             df = get_kline(symbol, period=period, adjust=adjust)
 
         if df is None or df.empty:
-            st.error("返回数据为空")
+            st.error("数据为空")
         else:
+            days_ago = min(365, len(df))
             date_range = st.slider(
                 "时间范围",
                 min_value=df["date"].min().date(),
                 max_value=df["date"].max().date(),
-                value=(max(df["date"].min().date(), df["date"].max().date() - pd.Timedelta(days=365)),
-                       df["date"].max().date())
+                value=(max(df["date"].min().date(), df["date"].max().date() - pd.Timedelta(days=days_ago)),
+                       df["date"].max().date()),
             )
             mask = (df["date"].dt.date >= date_range[0]) & (df["date"].dt.date <= date_range[1])
             df_view = df[mask].copy()
@@ -89,12 +96,9 @@ else:
             c4.metric("成交量", f"{latest.get('volume', 0)/1e6:.1f}M")
             c5.metric("日期", str(latest["date"].date()))
 
-            st.plotly_chart(
-                kline_chart(df_view, title=f"{name} ({symbol}) K线图", ma_lines=[5, 10, 20, 60]),
-                use_container_width=True
-            )
+            fig = kline_chart(df_view, title=f"{name} ({symbol})", ma_lines=[5, 10, 20, 60])
+            st.plotly_chart(fig, use_container_width=True)
 
-            with st.expander("📋 查看原始数据"):
+            with st.expander("📋 原始数据"):
                 st.dataframe(df_view.sort_values("date", ascending=False), use_container_width=True)
-                csv = df_view.to_csv(index=False)
-                st.download_button("⬇ 下载 CSV", csv, f"{symbol}_{period}.csv", "text/csv")
+                st.download_button("⬇ 下载 CSV", df_view.to_csv(index=False), f"{symbol}.csv")

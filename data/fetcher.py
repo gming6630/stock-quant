@@ -99,37 +99,52 @@ def get_stock_list():
 
 
 def search_stocks(keyword):
-    """搜索股票：支持中文名称、拼音首字母、股票代码"""
-    df = pd.DataFrame(_CORE_STOCKS, columns=["code", "name"])
+    """搜索股票：优先网络搜索全市场 → 本地列表兜底"""
     key = keyword.strip()
-
     if not key:
-        return df.head(20)
+        return pd.DataFrame(columns=["code", "name"])
 
-    # 纯数字 → 代码搜索
-    if key.isdigit():
-        code_match = df[df["code"].str.startswith(key)]
-        if len(code_match) > 0:
-            return code_match
-        if len(key) == 6:
-            extra = pd.DataFrame([(key.zfill(6), key.zfill(6))], columns=["code", "name"])
-            return extra
-        return df[df["code"].str.contains(key)]
+    # 6 位数字 → 直接当代码用
+    if key.isdigit() and len(key) == 6:
+        code = key.zfill(6)
+        df = pd.DataFrame([(code, code)], columns=["code", "name"])
+        return df
 
-    # 中文/英文名称搜索：先精确子串，再逐字模糊
+    # 先尝试东方财富搜索接口（实时、全市场）
+    try:
+        url = "https://searchapi.eastmoney.com/api/suggest/get"
+        params = {
+            "input": key,
+            "type": "14",
+            "token": "D43BF722C8E33BDC906FB84D85E326E8",
+            "count": "10",
+        }
+        resp = requests.get(url, params=params, timeout=8,
+            headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.eastmoney.com/"})
+        data = resp.json()
+        items = data.get("QuotationCodeTable", {}).get("Data", [])
+        if items:
+            rows = []
+            for it in items:
+                code = it.get("Code", "")
+                name = it.get("Name", "")
+                market = it.get("MktNum", "")
+                if code and len(code) == 6 and market in ("0", "1"):
+                    rows.append((code, name))
+            if rows:
+                return pd.DataFrame(rows, columns=["code", "name"]).drop_duplicates("code")
+    except Exception:
+        pass
+
+    # 网络失败 → 本地列表兜底
+    df = pd.DataFrame(_CORE_STOCKS, columns=["code", "name"])
     mask = df["name"].str.contains(key, case=False, na=False)
     result = df[mask]
-
     if result.empty:
-        # 逐字匹配：每个字符都必须出现在名称中
         narrowed = df
         for char in key:
             narrowed = narrowed[narrowed["name"].str.contains(char, case=False, na=False)]
-            if narrowed.empty:
-                break
-        if not narrowed.empty:
-            result = narrowed
-
+        result = narrowed
     return result.head(50)
 
 
